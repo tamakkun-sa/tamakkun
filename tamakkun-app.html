@@ -1,0 +1,200 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>تمكّن - تسجيل الدخول</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;700&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.49.1/dist/umd/supabase.js"></script>
+<style>
+:root{--bg:#F3EBDF;--surface:#FBF7F0;--olive:#4B5A22;--line:#E2D5C3;--red:#B3261E}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){--bg:#1d1b17;--surface:#2a2722;--olive:#d6dfb0;--line:#3d3830;--red:#ef8a84}}
+:root[data-theme="dark"]{--bg:#1d1b17;--surface:#2a2722;--olive:#d6dfb0;--line:#3d3830;--red:#ef8a84}
+*{box-sizing:border-box}
+body{margin:0;font-family:Tajawal,system-ui,sans-serif;background:var(--bg);color:var(--olive);min-height:100vh;display:grid;place-items:center;padding:16px}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:24px;width:100%;max-width:380px}
+h1{font-size:24px;margin:0 0 4px}
+p.sub{margin:0 0 18px;opacity:.8}
+.tabs{display:flex;gap:8px;margin-bottom:16px}
+.tabs button{flex:1;padding:10px;border:1px solid var(--line);background:transparent;border-radius:10px;font:inherit;color:var(--olive);cursor:pointer}
+.tabs button.on{background:var(--olive);color:#fff}
+label{display:block;margin:10px 0 6px;font-weight:700}
+input{width:100%;padding:12px;border:1px solid var(--line);border-radius:10px;font:inherit;background:transparent;color:inherit}
+.btn{width:100%;margin-top:16px;padding:12px;border:0;border-radius:10px;background:var(--olive);color:var(--surface);font:inherit;font-weight:700;cursor:pointer}
+.btn:disabled{opacity:.6;cursor:default}
+.btn.ghost{background:transparent;color:var(--olive);border:1px solid var(--line)}
+.msg{margin-top:12px;font-size:15px;min-height:20px}
+.err{color:var(--red)}
+.hidden{display:none}
+.lesson{padding:12px 0;border-bottom:1px solid var(--line)}
+.lesson:last-child{border-bottom:0}
+.lesson h3{margin:0 0 2px;font-size:18px}
+.lesson .unit{margin:0 0 6px;opacity:.7;font-size:14px}
+.lesson p{margin:0;line-height:1.7}
+.box{margin-top:16px;padding:14px;border:1px dashed var(--line);border-radius:10px;opacity:.85}
+</style>
+</head>
+<body>
+
+<div class="card" id="authView">
+  <h1>تمكّن</h1>
+  <p class="sub">سجّلي دخولك لتوصلين للمحتوى</p>
+
+  <div class="tabs">
+    <button id="tabLogin" class="on" type="button">تسجيل دخول</button>
+    <button id="tabSignup" type="button">حساب جديد</button>
+  </div>
+
+  <form id="form" novalidate>
+    <label for="email">الإيميل</label>
+    <input id="email" type="email" autocomplete="email" required>
+
+    <label for="password">كلمة المرور</label>
+    <input id="password" type="password" autocomplete="current-password" minlength="6" required>
+
+    <button class="btn" id="submit" type="submit">دخول</button>
+  </form>
+  <div class="msg" id="authMsg" role="status"></div>
+</div>
+
+<div class="card hidden" id="appView">
+  <h1>أهلاً فيك</h1>
+  <p class="sub" id="userEmail"></p>
+  <div class="box" id="lessons">جاري تحميل الدروس...</div>
+  <button class="btn ghost" id="logout" type="button">تسجيل خروج</button>
+</div>
+
+<script>
+const SUPABASE_URL = "https://tkcquevjthzzflrgzfjg.supabase.co";
+const SUPABASE_KEY = "sb_publishable_qTPizupafAQnG8Mxx-TsiA_AsMkbV24";
+
+const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+let mode = "login";
+const $ = (id) => document.getElementById(id);
+
+function setMsg(text, isError) {
+  const el = $("authMsg");
+  el.textContent = text || "";
+  el.className = "msg" + (isError ? " err" : "");
+}
+
+function setMode(next) {
+  mode = next;
+  $("tabLogin").classList.toggle("on", next === "login");
+  $("tabSignup").classList.toggle("on", next === "signup");
+  $("password").autocomplete = next === "login" ? "current-password" : "new-password";
+  $("submit").textContent = next === "login" ? "دخول" : "إنشاء حساب";
+  setMsg("");
+}
+
+function arabicError(message) {
+  const m = (message || "").toLowerCase();
+  if (m.includes("invalid login")) return "الإيميل أو كلمة المرور غير صحيحة.";
+  if (m.includes("already registered")) return "هذا الإيميل مسجل مسبقاً، سجلي دخول.";
+  if (m.includes("email not confirmed")) return "أكدي إيميلك أولاً من الرابط اللي وصلك.";
+  if (m.includes("password")) return "كلمة المرور لازم تكون 6 حروف أو أكثر.";
+  return "صار خطأ: " + (message || "غير معروف");
+}
+
+function showSession(session) {
+  if (session) {
+    $("authView").classList.add("hidden");
+    $("appView").classList.remove("hidden");
+    $("userEmail").textContent = session.user.email;
+    loadLessons();
+  } else {
+    $("appView").classList.add("hidden");
+    $("authView").classList.remove("hidden");
+  }
+}
+
+async function loadLessons() {
+  const box = $("lessons");
+  box.textContent = "جاري تحميل الدروس...";
+  const { data, error } = await sb
+    .from("lessons")
+    .select("id, unit, title, content")
+    .eq("published", true)
+    .order("sort_order");
+
+  if (error) {
+    box.textContent = "ما قدرنا نحمّل الدروس. حاولي مرة ثانية.";
+    return;
+  }
+  if (!data || data.length === 0) {
+    box.textContent = "ما فيه دروس منشورة بعد.";
+    return;
+  }
+
+  box.textContent = "";
+  data.forEach((l) => {
+    const item = document.createElement("div");
+    item.className = "lesson";
+
+    const title = document.createElement("h3");
+    title.textContent = l.title;
+
+    const unit = document.createElement("p");
+    unit.className = "unit";
+    unit.textContent = l.unit;
+
+    const idea = document.createElement("p");
+    idea.textContent = (l.content && l.content.idea) || "";
+
+    item.append(title, unit, idea);
+    box.appendChild(item);
+  });
+}
+
+$("tabLogin").onclick = () => setMode("login");
+$("tabSignup").onclick = () => setMode("signup");
+
+$("form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const email = $("email").value.trim();
+  const password = $("password").value;
+  if (!email || !password) {
+    setMsg("اكتبي الإيميل وكلمة المرور.", true);
+    return;
+  }
+
+  const btn = $("submit");
+  btn.disabled = true;
+  setMsg("");
+
+  try {
+    if (mode === "signup") {
+      const { error } = await sb.auth.signUp({
+        email,
+        password,
+        options: { emailRedirectTo: window.location.href }
+      });
+      if (error) throw error;
+      setMsg("أرسلنا رابط تأكيد لإيميلك. أكديه، ثم سجلي دخول.");
+      setMode("login");
+    } else {
+      const { error } = await sb.auth.signInWithPassword({ email, password });
+      if (error) throw error;
+      // onAuthStateChange يعرض المحتوى تلقائياً
+    }
+  } catch (err) {
+    setMsg(arabicError(err && err.message), true);
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+$("logout").onclick = async () => {
+  await sb.auth.signOut();
+};
+
+sb.auth.onAuthStateChange((_event, session) => {
+  showSession(session);
+});
+
+sb.auth.getSession().then(({ data }) => showSession(data.session));
+</script>
+</body>
+</html>
